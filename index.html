@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Kepler.gl Flask App</title>
+</head>
+<body>
+    <h1>Enter Parameters</h1>
+    <form action="/generate_map" method="post">
+        <label for="begin_date">Begin Date:</label>
+        <input type="text" id="begin_date" name="begin_date"><br>
+        <label for="end_date">End Date:</label>
+        <input type="text" id="end_date" name="end_date"><br>
+        <label for="plants">Plants (comma-separated):</label>
+        <input type="text" id="plants" name="plants">
+        <input type="submit" value="Submit">
+    </form>
+</body>
+</html>
