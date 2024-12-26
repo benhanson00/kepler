@@ -1,19 +1,36 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Kepler.gl Flask App</title>
+    <meta charset="UTF-8">
+    <title>Date Input Form</title>
 </head>
 <body>
-    <h1>Enter Parameters</h1>
-    <form action="/generate_map" method="post">
-        <label for="begin_date">Begin Date:</label>
-        <input type="text" id="begin_date" name="begin_date"><br>
-        <label for="end_date">End Date:</label>
-        <input type="text" id="end_date" name="end_date"><br>
-        <label for="plants">Plants (comma-separated):</label>
-        <input type="text" id="plants" name="plants">
-        <input type="submit" value="Submit">
+    <h1>Enter Begin and End Dates</h1>
+    <form method="POST" action="">
+        <p>
+            {{ form.begin_date.label }}<br>
+            {{ form.begin_date() }}
+        </p>
+        <p>
+            {{ form.end_date.label }}<br>
+            {{ form.end_date() }}
+        </p>
+		<p>
+			{{ form.plants_input.label}}
+			{{ form.plants_input() }}
+		</p>
+        <p>{{ form.submit() }}</p>
     </form>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul>
+            {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
 </body>
 </html>
