@@ -1,23 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Nov 25 10:15:23 2024
+Created on Wed Dec 18 09:22:51 2024
 
 @author: benja
 """
-from flask import Flask, render_template, request, send_file, jsonify
+
+from flask import Flask, render_template, request, flash, Response
+from wtforms import Form, DateField, SubmitField, StringField
+import requests
+import plotly.graph_objs as go
+import plotly.io as pio
 import pandas as pd
+import io
+from datetime import datetime
 import json
 from keplergl import KeplerGl
-import requests
-from datetime import datetime
 
-
-def api_get(URL):
-    
-    r = requests.get(url = URL)
-    data = r.json()
-    
-    return data
 
 def convert_date_format(date_str):
     """
@@ -28,7 +26,6 @@ def convert_date_format(date_str):
 
     Returns:
     - date_obj: date in format yyyy-mm-dd
-
     """
     # Define possible date formats
     date_formats = [
@@ -99,131 +96,7 @@ def find_center(df):
     
     return mean_lat, mean_lon
 
-URL_BASE = 'http://127.0.0.1:8212'
-
-app = Flask(__name__)
-
-# Custom error class for blank input
-class BlankInputError(Exception):
-    pass
-
-class WrongFormatError(Exception):
-    pass
-
-# Error handler for BlankInputError
-@app.errorhandler(BlankInputError)
-def handle_blank_input_error(error):
-    html_content = f"""
-    <html>
-    <head>
-        <title>Error: No Data Returned</title>
-    </head>
-    <body>
-        <h1>Error: No Data Returned</h1>
-        <p>{str(error)}</p>
-    </body>
-    </html>
-    """
-    return html_content, 400  # Return a 400 Bad Request status code
-
-@app.errorhandler(WrongFormatError)
-def wrong_format_error(error):
-    html_content = f"""
-    <html>
-    <head>
-        <title>Error: Date Format Incorrect</title>
-    </head>
-    <body>
-        <h1>Error: Date format not recognized.</h1>
-        <p>{str(error)}</p>
-    </body>
-    </html>
-    """
-    return html_content, 400  # Return a 400 Bad Request status code
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/generate_map', methods=['POST'])
-def generate_map():
-    begin_date = request.form['begin_date']
-    end_date = request.form['end_date']
-    plants_input = request.form['plants']
-    
-    end_date = convert_date_format(end_date)
-    
-    begin_date = convert_date_format(begin_date)
-    
-    if type(plants_input) is str:
-        plants_input = plants_input.upper()
-        
-    if plants_input:    
-        if plants_input == 'ALL':
-            URL = f"{URL_BASE}/rest/kOLdashapi/v1/deliverybygpszone?begindate={begin_date}&enddate={end_date}&beginplant=00&endplant=z"
-        
-            data = api_get(URL)
-        
-            df = data['deliverybygpszone']
-            df = pd.DataFrame(df)      
-    
-        else:
-        
-            plants = [plant.strip() for plant in plants_input.split(',') if plant.strip()]
-
-            df_list = []
-        
-            for plant in plants:
-                begin_plant = str(plant)
-                end_plant = str(plant)
-
-                URL = f"{URL_BASE}/rest/kOLdashapi/v1/deliverybygpszone?begindate={begin_date}&enddate={end_date}&beginplant={begin_plant}&endplant={end_plant}"
-        
-                data = api_get(URL)
-        
-                dfx = data['deliverybygpszone']
-                dfx = pd.DataFrame(dfx)
-                
-                df_list.append(dfx)
-                    
-            
-            if df_list == []:
-                raise BlankInputError("No delivery data found for selected plant parameters")
-                
-            df = pd.concat(df_list, ignore_index=True)  
-    else:
-        URL = f"{URL_BASE}/rest/kOLdashapi/v1/deliverybygpszone?begindate={begin_date}&enddate={end_date}&beginplant=00&endplant=z"
-        
-        data = api_get(URL)
-        
-        df = data['deliverybygpszone']
-        df = pd.DataFrame(df)  
-        
-    if data['deliverybygpszone'] == []:
-        raise BlankInputError("No delivery data found for selected parameters.")
-        
-    df = df.loc[:,~df.columns.duplicated()].copy()
-
-    df['s'] = 'P'
-    df['plantno'] = df['plantno'].astype({'plantno': str})
-    df['plantno'] = df['s'] + df['plantno']
-    
-    df.drop(['s'], axis = 1)
-    filtered_df = df.dropna(subset=['lat', 'lon'])
-    
-    filtered_df['date'] = pd.to_datetime(df['ticketdate'])
-    filtered_df['Day_of_Week'] = filtered_df['date'].dt.day_name()
-    
-    filtered_df = filtered_df.drop(['date'], axis = 1)
-
-    
-    # filter out data that is either negative or zero
-    filtered_df = filtered_df[filtered_df['tojobmin'] > 0]
-    filtered_df = filtered_df[filtered_df['tojobmin'] != 0]
-    
-    mean_latitude, mean_longitude = find_center(filtered_df)
-    
-    filtered_df = outlier_filter(filtered_df)
+def make_map(df, lat, lon):
     
     # JSON file
     f = open (r'.\config\config.json', "r")
@@ -231,19 +104,119 @@ def generate_map():
     # Reading from file
     config = json.loads(f.read())
     
-    config['config']['mapState']['latitude'] = mean_latitude
-    config['config']['mapState']['longitude'] = mean_longitude
+    config['config']['mapState']['latitude'] = lat
+    config['config']['mapState']['longitude'] = lon
 
     # Generate Kepler.gl map
     map_1 = KeplerGl(config=config)
-    map_1.add_data(data=filtered_df, name="Tickets")
+    map_1.add_data(data=df, name="Tickets")
     
     map_html = map_1._repr_html_()
-
+    
     return map_html
 
+class WrongFormatError(Exception):
+    pass
 
-    
+URL_BASE = 'http://127.0.0.1:8212'
 
-if __name__ == '__main__':
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your_secret_key_here'  # Used for flashing messages
+
+# WTForm for date inputs
+class DateForm(Form):
+    begin_date = DateField('Begin Date', format='%Y-%m-%d')
+    end_date = DateField('End Date', format='%Y-%m-%d')
+    plants_input = StringField('plants_input')
+    submit = SubmitField('Submit')
+
+# Home route to display the form
+@app.route("/", methods=["GET", "POST"])
+def home():
+    form = DateForm(request.form)
+    if request.method == "POST" and form.validate():
+        begin_date = form.begin_date.data
+        end_date = form.end_date.data
+        plants_input = form.plants_input.data
+        
+        if plants_input:
+            if plants_input == "ALL":
+                URL = f"{URL_BASE}/rest/kOLdashapi/v1/deliverybygpszone?begindate={begin_date}&enddate={end_date}&beginplant=00&endplant=z"
+            else:
+                plants = [plant.strip() for plant in plants_input.split(',') if plant.strip()]
+                
+                URL = 'list'
+                
+                url_list = []
+                
+                for plant in plants:
+                    begin_plant = str(plant)
+                    end_plant = str(plant)
+                    url = f"{URL_BASE}/rest/kOLdashapi/v1/deliverybygpszone?begindate={begin_date}&enddate={end_date}&beginplant={begin_plant}&endplant={end_plant}"
+                    url_list.append(url)
+        else:
+            URL = f"{URL_BASE}/rest/kOLdashapi/v1/deliverybygpszone?begindate={begin_date}&enddate={end_date}&beginplant=00&endplant=z"
+
+        try:
+            if URL == 'list':
+                df_list = []
+                for end in url_list:
+                    # response = requests.get(URL, params=params)
+                    response = requests.get(end)
+                    response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
+
+                    # Parse API response (example structure assumed: [{"date": "2024-01-01", "value": 100}, ...])
+                    api_data = response.json()
+            
+                    df_x = api_data['deliverybygpszone']
+                    df_x = pd.DataFrame(df_x)
+                    
+                    df_list.append(df_x)
+                df = pd.concat(df_list, ignore_index=True)
+            else:
+                # response = requests.get(URL, params=params)
+                response = requests.get(URL)
+                response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
+
+                # Parse API response (example structure assumed: [{"date": "2024-01-01", "value": 100}, ...])
+                api_data = response.json()
+            
+                df = api_data['deliverybygpszone']
+                df = pd.DataFrame(df)
+            
+            df = df.loc[:,~df.columns.duplicated()].copy()
+
+            df['s'] = 'P'
+            df['plantno'] = df['plantno'].astype({'plantno': str})
+            df['plantno'] = df['s'] + df['plantno']
+        
+            df.drop(['s'], axis = 1)
+            filtered_df = df.dropna(subset=['lat', 'lon'])
+            
+            filtered_df['date'] = pd.to_datetime(df['ticketdate'])
+            filtered_df['Day_of_Week'] = filtered_df['date'].dt.day_name()
+        
+            filtered_df = filtered_df.drop(['date'], axis = 1)
+
+        
+            # filter out data that is either negative or zero
+            filtered_df = filtered_df[filtered_df['tojobmin'] > 0]
+            filtered_df = filtered_df[filtered_df['tojobmin'] != 0]
+        
+            mean_latitude, mean_longitude = find_center(filtered_df)
+        
+            filtered_df = outlier_filter(filtered_df)
+        
+            maps = make_map(filtered_df, mean_latitude, mean_longitude)
+
+            # Send the graph as an image response
+            return Response(maps, mimetype='text/html')
+
+        except requests.exceptions.RequestException as e:
+            flash(f"API call failed: {e}", "danger")
+
+    return render_template("form.html", form=form)
+
+if __name__ == "__main__":
     app.run(debug=True)
